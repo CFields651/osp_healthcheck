@@ -1,5 +1,6 @@
 #!/bin/bash
-tests=$1
+minutes=$1
+tests=$2
 echo -e "This script assumes that: \n \
   1) It will be run from the undercloud as root\n \
   2) root can ssh to each overcloud controller\n \
@@ -10,10 +11,12 @@ echo -e "This script assumes that: \n \
 read -p "Press Enter to continue..."
 echo " "
 
-minutes=360 #go back 6 hours for ERROR|WARN messages
-controller0=172.16.0.87
-controller1=172.16.0.86
-controller2=172.16.0.88
+#go back $minutes for ERROR|WARN messages
+if [ -z "$minutes" ]; then minutes=60; fi
+
+controller0=172.16.0.21
+controller1=172.16.0.26
+controller2=172.16.0.28
 
 function filterLog {
   line=$1
