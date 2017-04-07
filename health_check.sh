@@ -1,5 +1,6 @@
 #!/bin/bash
-tests=$1
+minutes=$1
+tests=$2
 echo -e "This script assumes that: \n \
   1) It will be run from the undercloud as root\n \
   2) root can ssh to each overcloud controller\n \
@@ -10,10 +11,14 @@ echo -e "This script assumes that: \n \
 read -p "Press Enter to continue..."
 echo " "
 
-minutes=360 #go back 6 hours for ERROR|WARN messages
-controller0=172.16.0.87
-controller1=172.16.0.86
-controller2=172.16.0.88
+#go back $minutes for ERROR|WARN messages
+if [ -z "$minutes" ]; then minutes=60; fi
+
+#beginning of code to detect controllers
+#openstack server list -c Name -c Networks -f value | grep controller | sort | awk -F= '{ print $2 }'
+controller0=172.16.0.34
+controller1=172.16.0.29
+masterctrl=172.16.0.34
 
 function filterLog {
   line=$1
@@ -27,25 +32,26 @@ function filterLog {
   fi
 }
 
+
 echo "### mysql status ###"
-ssh root@$controller0 "mysql -e \"show variables like 'wsrep_cluster%'\""
-ssh root@$controller0 "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
+ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
+ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
 echo " "
 echo "### rabbitmq status ###"
 #keep this command around for deeper troubleshooting
 #rabbitmqctl list_queues | awk '{ print $1,$2 }'| while read queue value; do if [ "$value" != "0" ]; then echo $queue $value;fi; don
-ssh root@$controller0 rabbitmqctl cluster_status
+ssh heat-admin@$masterctrl sudo rabbitmqctl cluster_status
 echo " "
 echo "Stopped Pacemaker resources"
-ssh root@$controller0 pcs status | grep Stopped -B 2
+ssh heat-admin@$masterctrl sudo "pcs status | grep Stopped -B 2"
 echo " "
 echo "Pacemaker failed actions"
-ssh root@$controller0 crm_mon  -1 | grep 'Failed Actions' -A 99
+ssh heat-admin@$masterctrl sudo "crm_mon  -1 | grep 'Failed Actions' -A 99"
 echo " "
 echo "### ceph status ###"
-ssh root@$controller0 ceph -s 
+ssh heat-admin@$masterctrl sudo "ceph -s"
 echo " "
-ssh root@$controller0 ceph osd tree 
+ssh heat-admin@$masterctrl sudo "ceph osd tree"
 echo " "
 . /home/stack/overcloudrc
 echo "### openstack catalog list ###"
@@ -63,21 +69,27 @@ echo " "
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 read -p "Press enter to continue..."
 echo " "
-ssh root@$controller0 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller0 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
+scp ./read_logs.sh heat-admin@$controller0:/tmp/read_logs.sh >> /dev/null
+ssh heat-admin@$controller0 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
+#ssh heat-admin@$controller0 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller0 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
-ssh root@$controller1 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller1 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
+scp ./read_logs.sh heat-admin@$controller1:/tmp/read_logs.sh >> /dev/null
+ssh heat-admin@$controller1 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
+#ssh heat-admin@$controller1 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller1 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
-ssh root@$controller2 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller2 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
+scp ./read_logs.sh heat-admin@$controller2:/tmp/read_logs.sh >> /dev/null
+ssh heat-admin@$controller2 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
+#ssh heat-admin@$controller2 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller2 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
 if [ "$tests" = "all" ]; then 
   echo "Show scenario issues in service logs that are type INFO"
   read -p "Press enter to continue..."
   echo -e "\n#########controller 0 Port not present##########"
-  ssh root@$controller0 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
+  ssh heat-admin@$controller0 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
   echo -e "\n#########controller 1 Port not present##########"
-  ssh root@$controller1 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
+  ssh heat-admin@$controller1 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
   echo -e "\n#########controller 2 Port not present##########"
-  ssh root@$controller2 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
+  ssh heat-admin@$controller2 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
   # additional scenarios
   # grep 'Failed to connect to libvirt' /var/log/nova/nova-compute.log; #this caused the 'Port not present error in openvswitch'
 fi
