@@ -13,15 +13,15 @@ It shows:
    - openstack catalog  
    - neutron agent-list  
    - nova service-list  
- - displays ERROR|WARN messages from service log for the last 6 hours (configurable)  
+ - displays ERROR|WARN messages from service log for the last 60 minutes (configurable)  
  - runs the single most useful tempest test: tempest.scenario.test_network_basic_ops  
    
 If tempest is not installed follow this guide:  
   https://access.redhat.com/documentation/en/red-hat-openstack-platform/9/paged/manual-installation-procedures/chapter-17-install-openstack-integration-test-suite  
 
 The script does make some assumptions:  
-   1) It will be run from the undercloud as root  
-   2) root can ssh to each overcloud controller  
+   1) It will be run from the undercloud as heat-admin
+   2) heat-admin can ssh to each overcloud controller  
    3) The Undercloud is not using UTC time and overcloud is.   
       If this is not the case see the comments in filterLog function  
    4) It will be run from the directory where tempest tests can be executed  
