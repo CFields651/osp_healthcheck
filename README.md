@@ -1,4 +1,4 @@
-# osp_tools
+# osp_healthcheck
 tools for estimating the health of my openstack cluster  
 
 heath_check.sh is intended to be a quick troubleshooting tool  
