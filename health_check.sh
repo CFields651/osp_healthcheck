@@ -14,11 +14,17 @@ echo " "
 #go back $minutes for ERROR|WARN messages
 if [ -z "$minutes" ]; then minutes=60; fi
 
+#get the path to the script
+scriptpath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 #beginning of code to detect controllers
-#openstack server list -c Name -c Networks -f value | grep controller | sort | awk -F= '{ print $2 }'
-controller0=172.16.0.34
-controller1=172.16.0.29
-masterctrl=172.16.0.34
+. ~/stackrc
+read controller0 controller1 <<< $(openstack server list -c Name -c Networks -f value | grep controller | sort | awk -F= '{ print $2 }')
+masterctrl=$controller0
+echo controller0=$controller0
+echo controller1=$controller1
+. ~/overcloudrc
+
 
 function filterLog {
   line=$1
@@ -69,15 +75,15 @@ echo " "
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 read -p "Press enter to continue..."
 echo " "
-scp ./read_logs.sh heat-admin@$controller0:/tmp/read_logs.sh >> /dev/null
+scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller0:/tmp/read_logs.sh >> /dev/null
 ssh heat-admin@$controller0 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
 #ssh heat-admin@$controller0 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller0 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
-scp ./read_logs.sh heat-admin@$controller1:/tmp/read_logs.sh >> /dev/null
+scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller1:/tmp/read_logs.sh >> /dev/null
 ssh heat-admin@$controller1 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
 #ssh heat-admin@$controller1 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller1 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
-scp ./read_logs.sh heat-admin@$controller2:/tmp/read_logs.sh >> /dev/null
+scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller2:/tmp/read_logs.sh >> /dev/null
 ssh heat-admin@$controller2 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
 #ssh heat-admin@$controller2 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller2 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
