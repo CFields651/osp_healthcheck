@@ -72,6 +72,10 @@ echo " "
 echo "### cinder service-list ###"
 cinder service-list
 echo " "
+read -p "Press Enter to continue..."
+echo "### api response ###"
+for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl --max-time 3 $url;done
+echo " " 
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 read -p "Press enter to continue..."
 echo " "
