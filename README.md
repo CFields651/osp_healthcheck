@@ -13,6 +13,7 @@ It shows:
    - openstack catalog  
    - neutron agent-list  
    - nova service-list  
+ - does basic api polling to determine if public api's are reachable
  - displays ERROR|WARN messages from service log for the last 60 minutes (configurable)  
  - runs the single most useful tempest test: tempest.scenario.test_network_basic_ops  
    
