@@ -114,8 +114,8 @@ else
   read -p "What do you want to do: " answer
 
   if [ "$answer" == "a" ]; then
-    su -c "ostestr --pdb tempest.scenario.test_network_basic_ops" stack
+    sudo su -c "ostestr --pdb tempest.scenario.test_network_basic_ops" 
   elif [ "$answer" == "b" ]; then
-    su -c "ostestr --pdb tempest.scenario.test_minimum_basic" stack
+    sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
   fi
 fi
