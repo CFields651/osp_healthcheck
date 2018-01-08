@@ -19,10 +19,11 @@ scriptpath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 #beginning of code to detect controllers
 . ~/stackrc
-read controller0 controller1 <<< $(openstack server list -c Name -c Networks -f value | grep controller | sort | awk -F= '{ print $2 }')
+read controller0 controller1 controller2 <<< $(openstack server list -c Name -c Networks -f value | grep controller | sort | awk -F= '{ print $2 }')
 masterctrl=$controller0
 echo controller0=$controller0
 echo controller1=$controller1
+echo controller2=$controller2
 . ~/overcloudrc
 
 
