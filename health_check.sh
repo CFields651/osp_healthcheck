@@ -8,7 +8,7 @@ echo -e "This script assumes that: \n \
      If this is not the case see the comments in filterLog function\n \
   4) It will be run from the directory where tempest tests can be executed\n \
   5) Controler IP address variables have been set in the script"
-read -p "Press Enter to continue..."
+read -p "Press enter to continue..."
 echo " "
 
 #go back $minutes for ERROR|WARN messages
@@ -24,8 +24,6 @@ masterctrl=$controller0
 echo controller0=$controller0
 echo controller1=$controller1
 echo controller2=$controller2
-. ~/overcloudrc
-
 
 function filterLog {
   line=$1
@@ -39,6 +37,16 @@ function filterLog {
   fi
 }
 
+echo "### disk space check ###"
+echo "disk space on $(hostname)"
+sudo df -h
+
+. ~/stackrc
+for host in $(openstack server list -c Name -f value); do 
+  echo disk space on $host
+  ssh heat-admin@$host sudo df -h
+  echo ' '
+done
 
 echo "### mysql status ###"
 ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
@@ -60,10 +68,11 @@ ssh heat-admin@$masterctrl sudo "ceph -s"
 echo " "
 ssh heat-admin@$masterctrl sudo "ceph osd tree"
 echo " "
-. /home/stack/overcloudrc
-echo "### openstack catalog list ###"
-openstack catalog list
+. ~/stackrc
+openstack baremetal node list
 echo " "
+
+. /home/stack/overcloudrc
 echo "### neutron agent-list ###"
 neutron agent-list
 echo " "
@@ -73,12 +82,12 @@ echo " "
 echo "### cinder service-list ###"
 cinder service-list
 echo " "
-read -p "Press Enter to continue..."
+#read -p "Press enter to continue..."
 echo "### api response ###"
 for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl --max-time 3 $url;done
 echo " " 
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
-read -p "Press enter to continue..."
+#read -p "Press enter to continue..."
 echo " "
 scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller0:/tmp/read_logs.sh >> /dev/null
 ssh heat-admin@$controller0 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
@@ -94,7 +103,7 @@ ssh heat-admin@$controller2 sudo su -c /tmp/read_logs.sh | while read line; do f
 echo " "
 if [ "$tests" = "all" ]; then 
   echo "Show scenario issues in service logs that are type INFO"
-  read -p "Press enter to continue..."
+#  read -p "Press enter to continue..."
   echo -e "\n#########controller 0 Port not present##########"
   ssh heat-admin@$controller0 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
   echo -e "\n#########controller 1 Port not present##########"
@@ -104,6 +113,35 @@ if [ "$tests" = "all" ]; then
   # additional scenarios
   # grep 'Failed to connect to libvirt' /var/log/nova/nova-compute.log; #this caused the 'Port not present error in openvswitch'
 fi
+
+echo "### mongodb status ###"
+read mongoip <<< $(ssh heat-admin@$controller0 sudo grep 'mongodb://' /etc/ceilometer/ceilometer.conf| grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n1)
+ssh heat-admin@$controller0 "sudo mongo $mongoip:27017/ceilometer --eval \"printjson(rs.status())\"" | grep -e name -e state -e optime\" -e lastHeartbeatRecv
+echo ' '
+
+. ~/stackrc
+echo "### update status ###"
+for host in $(openstack server list -c Name -f value); do 
+  echo rpms to update in OSP repo for $host
+  ssh heat-admin@$host sudo yum check-updates --disablerepo='*' --enablerepo='rhel-7-server-openstack-10-rpms' | wc -l
+  echo ' '
+done
+
+echo "### restart needed status ###"
+for host in $(openstack server list -c Name -f value); do 
+  echo restart status for $host
+  ssh heat-admin@$host sudo  needs-restarting  -r ; echo $?
+  echo ' '
+done
+
+echo "### failed systemd units ###"
+echo failed systemd units on $(hostname)
+systemctl list-units --state=failed
+for host in $(openstack server list -c Name -f value); do 
+  echo failed systemd units on $host
+  ssh heat-admin@$host sudo systemctl list-units --state=failed
+  echo ' '
+done
 
 if [ ! -e etc/tempest.conf ]; then 
   echo "etc/tempest.conf not found; won't try to run tests" 
