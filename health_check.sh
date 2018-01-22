@@ -85,15 +85,6 @@ for host in $(openstack server list -c Name -f value); do
   echo ' '
 done
 
-echo "### failed systemd units ###"
-echo failed systemd units on $(hostname)
-systemctl list-units --state=failed
-for host in $(openstack server list -c Name -f value); do 
-  echo failed systemd units on $host
-  ssh heat-admin@$host sudo systemctl list-units --state=failed
-  echo ' '
-done
-
 . /home/stack/overcloudrc
 echo "### neutron agent-list ###"
 neutron agent-list
@@ -109,6 +100,19 @@ echo " "
 echo "### api response ###"
 for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl -s --max-time 3 $url;done
 echo " " 
+
+echo "### undercloud metadata response ###"
+read metaport <<< $(sudo grep "^metadata_listen_port" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
+read metaip   <<< $(sudo grep "^metadata_listen=" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
+curl $metaip:$metaport
+echo " " 
+
+echo "### overcloud metadata response ###"
+read metaport   <<< $(ssh heat-admin@$masterctrl sudo grep "^metadata_listen_port" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
+read metaip <<< $(ssh heat-admin@$masterctrl sudo grep "^metadata_listen=" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
+ssh heat-admin@$masterctrl sudo curl -s $metaip:$metaport
+echo " " 
+
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 #read -p "Press enter to continue..."
 echo " "
