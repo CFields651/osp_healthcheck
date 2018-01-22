@@ -8,8 +8,8 @@ echo -e "This script assumes that: \n \
      If this is not the case see the comments in filterLog function\n \
   4) It will be run from the directory where tempest tests can be executed\n \
   5) Controler IP address variables have been set in the script"
-read -p "Press enter to continue..."
-echo " "
+#read -p "Press enter to continue..."
+#echo " "
 
 #go back $minutes for ERROR|WARN messages
 if [ -z "$minutes" ]; then minutes=60; fi
@@ -52,16 +52,22 @@ echo "### mysql status ###"
 ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
 ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
 echo " "
+echo "### mysql cluster check"
+ssh heat-admin@$masterctrl sudo clustercheck
+echo " "
 echo "### rabbitmq status ###"
 #keep this command around for deeper troubleshooting
 #rabbitmqctl list_queues | awk '{ print $1,$2 }'| while read queue value; do if [ "$value" != "0" ]; then echo $queue $value;fi; don
 ssh heat-admin@$masterctrl sudo rabbitmqctl cluster_status
 echo " "
 echo "Stopped Pacemaker resources"
-ssh heat-admin@$masterctrl sudo "pcs status | grep Stopped -B 2"
+ssh heat-admin@$masterctrl sudo "pcs status | grep -e Stopped -e unmanaged -B 2"
 echo " "
 echo "Pacemaker failed actions"
 ssh heat-admin@$masterctrl sudo "crm_mon  -1 | grep 'Failed Actions' -A 99"
+echo " "
+echo "Pacemaker maintenance mode"
+ssh heat-admin@$masterctrl sudo "pcs property show maintenance-mode"
 echo " "
 echo "### ceph status ###"
 ssh heat-admin@$masterctrl sudo "ceph -s"
@@ -71,6 +77,22 @@ echo " "
 . ~/stackrc
 openstack baremetal node list
 echo " "
+
+echo "### systemd units status ###"
+for host in $(openstack server list -c Name -f value); do 
+  echo "systemd units not 'loaded active' on $host"
+  ssh heat-admin@$host  sudo systemctl list-units "openstack*" "neutron*" "openvswitch*" --no-pager --no-legend | grep -v 'loaded active'
+  echo ' '
+done
+
+echo "### failed systemd units ###"
+echo failed systemd units on $(hostname)
+systemctl list-units --state=failed
+for host in $(openstack server list -c Name -f value); do 
+  echo failed systemd units on $host
+  ssh heat-admin@$host sudo systemctl list-units --state=failed
+  echo ' '
+done
 
 . /home/stack/overcloudrc
 echo "### neutron agent-list ###"
@@ -82,9 +104,10 @@ echo " "
 echo "### cinder service-list ###"
 cinder service-list
 echo " "
+
 #read -p "Press enter to continue..."
 echo "### api response ###"
-for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl --max-time 3 $url;done
+for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl -s --max-time 3 $url;done
 echo " " 
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 #read -p "Press enter to continue..."
@@ -134,26 +157,8 @@ for host in $(openstack server list -c Name -f value); do
   echo ' '
 done
 
-echo "### failed systemd units ###"
-echo failed systemd units on $(hostname)
-systemctl list-units --state=failed
-for host in $(openstack server list -c Name -f value); do 
-  echo failed systemd units on $host
-  ssh heat-admin@$host sudo systemctl list-units --state=failed
-  echo ' '
-done
-
 if [ ! -e etc/tempest.conf ]; then 
   echo "etc/tempest.conf not found; won't try to run tests" 
 else
-  echo -e "a) Run tempest.test_network_basic_ops "
-  echo -e "b) Run tempest.test_minimum_basic.py "
-  echo -e "q) quit"
-  read -p "What do you want to do: " answer
-
-  if [ "$answer" == "a" ]; then
-    sudo su -c "ostestr --pdb tempest.scenario.test_network_basic_ops" 
-  elif [ "$answer" == "b" ]; then
-    sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
-  fi
+  sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
 fi
