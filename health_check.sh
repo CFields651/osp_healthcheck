@@ -6,8 +6,9 @@ echo -e "This script assumes that: \n \
   2) root can ssh to each overcloud controller\n \
   3) The Undercloud is not using UTC time and overcloud is. \n \
      If this is not the case see the comments in filterLog function\n \
-  4) It will be run from the directory where tempest tests can be executed\n \
-  5) Controler IP address variables have been set in the script"
+  4) It will be run from the directory where tempest tests can be executed if tempest testing is desired\n \
+  5) Overcloud node are in /etc/hosts/; if not: \n \
+     openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print $2\"  \"$1; }'  >>/etc/hosts"
 #read -p "Press enter to continue..."
 #echo " "
 
@@ -39,26 +40,37 @@ function filterLog {
 
 echo "### disk space check ###"
 echo "disk space on $(hostname)"
-sudo df -h
+sudo df -h | head -5
 
 . ~/stackrc
 for host in $(openstack server list -c Name -f value); do 
   echo disk space on $host
-  ssh heat-admin@$host sudo df -h
+  ssh heat-admin@$host sudo df -h | head -5
   echo ' '
 done
 
-echo "### mysql status ###"
-ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
-ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
+#echo "### mysql status ###"
+#Keeping these in the code but too much detail so commented out
+#ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
+#ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
 echo " "
 echo "### mysql cluster check"
-ssh heat-admin@$masterctrl sudo clustercheck
+if ssh heat-admin@$masterctrl sudo docker ps | grep -q -o galera-bundle-docker.*; then 
+  ssh heat-admin@controller-0 sudo docker exec galera-bundle-docker-0 clustercheck
+else
+  ssh heat-admin@$masterctrl sudo clustercheck
+fi
 echo " "
+
 echo "### rabbitmq status ###"
 #keep this command around for deeper troubleshooting
 #rabbitmqctl list_queues | awk '{ print $1,$2 }'| while read queue value; do if [ "$value" != "0" ]; then echo $queue $value;fi; don
-ssh heat-admin@$masterctrl sudo rabbitmqctl cluster_status
+if ssh heat-admin@$masterctrl sudo docker ps | grep -q -o rabbitmq-bundle-docker.*; then 
+  ssh heat-admin@$masterctrl sudo docker exec rabbitmq-bundle-docker-0 rabbitmqctl cluster_status
+else
+  ssh heat-admin@$masterctrl sudo rabbitmqctl cluster_status
+fi
+
 echo " "
 echo "Stopped Pacemaker resources"
 ssh heat-admin@$masterctrl sudo "pcs status | grep -e Stopped -e unmanaged -B 2"
