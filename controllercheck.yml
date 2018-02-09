@@ -1,0 +1,91 @@
+- hosts: controller
+  become: yes
+  vars:
+    verbose: "{{ verbose|default('false') }}"
+  gather_facts: no
+  tasks:
+#    - name: show verbosity
+#      shell: echo '{{ verbose }}'
+#      register: verbose_value
+#    - debug: var=verbose_value.stdout
+
+    - name: galera replication status (clustercheck)
+      command: clustercheck 
+      register: cluschk
+      failed_when: "'node is synced' not in cluschk.stdout"
+      ignore_errors: yes
+    - name: show galera clustercheck (verbose=true)
+      debug: var=cluschk.stdout_lines
+      when: verbose
+    - name: rabbitmq status (rabbitmqctl node_health_check)
+      command: rabbitmqctl node_health_check
+      register: rabbitchk
+      failed_when: rabbitchk.rc != 0
+      ignore_errors: yes
+    - name: show rabbitmqctl status (verbose=true)
+      debug: var=rabbitchk.stdout_lines
+      when: verbose
+    - name: check pcs for maintenance mode
+      command: pcs property show maintenance-mode
+      register: pcspropchk
+      failed_when: "'true' in pcspropchk.stdout"
+    - name: show pcs property maintenance-mode 
+      debug: var=pcspropchk.stdout
+      when: verbose
+    - name: get pacemaker status
+      command: pcs status xml
+      register: pcs_status
+    - name: evaluate pacemaker status
+      pacemaker: status={{ pcs_status.stdout }}
+      register: result
+    - name: show pacemaker status
+      debug: var=result.msg
+      when: verbose
+
+- hosts: controller[0]
+  become: yes
+  vars:
+    verbose: "{{ verbose|default('false') }}"
+  gather_facts: no
+  tasks:
+    - name: get pacemaker resources
+      shell: "pcs status xml | grep Stopped; exit 0"
+      register: pcsresourcechk
+    - name: find pacemaker resources Stopped
+      debug: var=pcsresourcechk.stdout_lines
+      when: "'Stopped' in pcsresourcechk.stdout_lines"
+    - name: get pacemaker resoures (verbose=true)
+      command: pcs status resources
+      register: pcsresourcechk
+      when: verbose
+    - name: show pacemaker resources (verbose=true)
+      debug: var=pcsresourcechk.stdout_lines
+      when: verbose
+
+- hosts: undercloud
+  become: yes
+  vars:
+    verbose: "{{ verbose|default('false') }}"
+  gather_facts: no
+  tasks:
+    - name: check openstack compute agent list
+      shell: . /home/stack/overcloudrc; openstack network agent list -f value | grep -v 'True UP' 
+      #shell: . /home/stack/overcloudrc; openstack network agent list -f json \
+      #| jq '[.[] | select(.State!="UP"),select(.Alive!=true)'] | jq 'unique'
+      register: neutronchk
+      failed_when: neutronchk.rc == 99 #never fail here
+    - name: show unhealthy compute agents
+      debug: var=neutronchk.stdout_lines
+      when: neutronchk.rc != 1
+    - fail: 
+        msg: "Not all compute agents are healthy" 
+      when: neutronchk.rc != 1 
+      ignore_errors: yes
+    - name: get openstack network agent list (verbose=true)
+      shell: . /home/stack/overcloudrc; openstack network agent list
+      register: neutronchk
+      when: verbose
+    - name: show openstack network agent list (verbose=true)
+      debug: var=neutronchk.stdout_lines
+      when: verbose
+#- import_playbook: /usr/share/openstack-tripleo-validations/validations/pacemaker-status.yaml
