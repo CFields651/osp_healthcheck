@@ -8,7 +8,7 @@ echo -e "This script assumes that: \n \
      If this is not the case see the comments in filterLog function\n \
   4) It will be run from the directory where tempest tests can be executed if tempest testing is desired\n \
   5) Overcloud node are in /etc/hosts/; if not: \n \
-     openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print $2\"  \"$1; }'  >>/etc/hosts"
+     openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print \$2\"  \"\$1; }'  >>/etc/hosts"
 #read -p "Press enter to continue..."
 #echo " "
 
