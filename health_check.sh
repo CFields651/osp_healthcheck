@@ -9,6 +9,7 @@ echo -e "This script assumes that: \n \
   4) It will be run from the directory where tempest tests can be executed if tempest testing is desired\n \
   5) Overcloud node are in /etc/hosts/; if not: \n \
      openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print \$2\"  \"\$1; }'  >>/etc/hosts"
+     #openstack server list -c Name -c Networks -f value | awk '{ gsub("ctlplane=",""); print $2"  "$1; }'  >>/etc/hosts
 #read -p "Press enter to continue..."
 #echo " "
 
@@ -56,10 +57,16 @@ done
 echo " "
 echo "### mysql cluster check"
 if ssh heat-admin@$masterctrl sudo docker ps | grep -q -o galera-bundle-docker.*; then 
-  ssh heat-admin@controller-0 sudo docker exec galera-bundle-docker-0 clustercheck
+  for controller in $controller0 $controller1 $controller2; do 
+    read galera <<< $(ssh heat-admin@$controller sudo docker ps | grep -o galera-bundle-docker.*)
+    ssh heat-admin@$controller sudo docker exec $galera clustercheck
+  done
 else
-  ssh heat-admin@$masterctrl sudo clustercheck
+  for controller in $controller0 $controller1 $controller2; do 
+    ssh heat-admin@$controller sudo clustercheck
+  done
 fi
+
 echo " "
 
 echo "### rabbitmq status ###"
