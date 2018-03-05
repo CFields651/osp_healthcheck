@@ -1,6 +1,6 @@
 #!/bin/bash
+long=$1
 minutes=$1
-tests=$2
 echo -e "This script assumes that: \n \
   1) It will be run from the undercloud as root\n \
   2) root can ssh to each overcloud controller\n \
@@ -11,8 +11,10 @@ echo -e "This script assumes that: \n \
      openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print \$2\"  \"\$1; }'  >>/etc/hosts"
      #openstack server list -c Name -c Networks -f value | awk '{ gsub("ctlplane=",""); print $2"  "$1; }'  >>/etc/hosts
 #read -p "Press enter to continue..."
-#echo " "
+echo " "
 
+#check to see if we run all tests
+if [ -z "$long" ]; then long=false; fi
 #go back $minutes for ERROR|WARN messages
 if [ -z "$minutes" ]; then minutes=60; fi
 
@@ -26,34 +28,38 @@ masterctrl=$controller0
 echo controller0=$controller0
 echo controller1=$controller1
 echo controller2=$controller2
+echo " " 
 
 function filterLog {
   line=$1
-  if echo "$line" | grep -q 'controller'; then echo "$line"
+  if echo "$line" | grep -q 'log check'; then echo "$line"
   else
     read rawLogTime <<< $(echo $line | grep -o ^"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]") 
     read convertedLogTime <<< $(date +%s --date "$rawLogTime") 
-    read adjustedCurrentTime <<< $(date -u +%s --date "- $minutes min")  #use this line if UTC is NOT used on the undercloud
-    #read adjustedCurrentTime <<< $(date +%s --date "- $minutes min")    #use this line if UTC is used on the undercloud
+    #read adjustedCurrentTime <<< $(date -u +%s --date "- $minutes min")  #use this line if UTC is NOT used on the undercloud
+    read adjustedCurrentTime <<< $(date +%s --date "- $minutes min")    #use this line if UTC is used on the undercloud
     if [ $convertedLogTime -ge $adjustedCurrentTime ]; then echo $line; fi 
   fi
 }
 
-echo "### disk space check ###"
-echo "disk space on $(hostname)"
-sudo df -h | head -5
+if $long; then
+  echo "### disk space check ###"
+  echo "disk space on $(hostname)"
+  sudo df -h | head -5
 
-. ~/stackrc
-for host in $(openstack server list -c Name -f value); do 
-  echo disk space on $host
-  ssh heat-admin@$host sudo df -h | head -5
-  echo ' '
-done
+  . ~/stackrc
+  for host in $(openstack server list -c Name -f value); do 
+    echo disk space on $host
+    ssh heat-admin@$host sudo df -h | head -5
+    echo ' '
+  done
+fi
 
 #echo "### mysql status ###"
 #Keeping these in the code but too much detail so commented out
 #ssh heat-admin@$masterctrl sudo "mysql -e \"show variables like 'wsrep_cluster%'\""
 #ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|state_uuid|conf_id|cluster_status|wsrep_ready|wsrep_connected|local_state_comment|incoming_address|last_committed)\""
+ssh heat-admin@$masterctrl sudo "mysql  -e \"show status;\" | grep -E \"(wsrep_local_state_comment|wsrep_cluster_size|wsrep_ready|cluster_status|wsrep_ready|wsrep_connected|incoming_address)\""
 echo " "
 echo "### mysql cluster check"
 if ssh heat-admin@$masterctrl sudo docker ps | grep -q -o galera-bundle-docker.*; then 
@@ -104,26 +110,36 @@ for host in $(openstack server list -c Name -f value); do
   echo ' '
 done
 
+if $long; then 
+  echo "### kernel errors since boot ###"
+  for host in $(openstack server list -c Name -f value); do 
+    echo "kernel errors on $host"
+    ssh heat-admin@$host  sudo journalctl -p err -k -b
+    echo ' '
+  done 
+fi
+
 . /home/stack/overcloudrc
-echo "### neutron agent-list ###"
-neutron agent-list
+echo "###  network agent list ###"
+openstack network agent list
 echo " "
-echo "### nova service-list ###"
-nova service-list
+echo "### compute service list ###"
+openstack compute service list
 echo " "
-echo "### cinder service-list ###"
-cinder service-list
+echo "### volume service list ###"
+openstack volume service list
 echo " "
 
 #read -p "Press enter to continue..."
 echo "### api response ###"
+. ~/overcloudrc
 for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl -s --max-time 3 $url;done
 echo " " 
 
 echo "### undercloud metadata response ###"
 read metaport <<< $(sudo grep "^metadata_listen_port" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
 read metaip   <<< $(sudo grep "^metadata_listen=" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
-curl $metaip:$metaport
+curl -s $metaip:$metaport
 echo " " 
 
 echo "### overcloud metadata response ###"
@@ -147,7 +163,8 @@ scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller2:/tmp/read_logs.sh >
 ssh heat-admin@$controller2 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
 #ssh heat-admin@$controller2 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller2 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
-if [ "$tests" = "all" ]; then 
+
+if $long; then 
   echo "Show scenario issues in service logs that are type INFO"
 #  read -p "Press enter to continue..."
   echo -e "\n#########controller 0 Port not present##########"
@@ -156,33 +173,39 @@ if [ "$tests" = "all" ]; then
   ssh heat-admin@$controller1 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
   echo -e "\n#########controller 2 Port not present##########"
   ssh heat-admin@$controller2 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
-  # additional scenarios
-  # grep 'Failed to connect to libvirt' /var/log/nova/nova-compute.log; #this caused the 'Port not present error in openvswitch'
 fi
 
-echo "### mongodb status ###"
-read mongoip <<< $(ssh heat-admin@$controller0 sudo grep 'mongodb://' /etc/ceilometer/ceilometer.conf| grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n1)
-ssh heat-admin@$controller0 "sudo mongo $mongoip:27017/ceilometer --eval \"printjson(rs.status())\"" | grep -e name -e state -e optime\" -e lastHeartbeatRecv
-echo ' '
-
-. ~/stackrc
-echo "### update status ###"
-read osprepo <<< $(sudo subscription-manager repos --list-enabled | grep -o  'rhel-7-server-openstack-..-rpms')
-for host in $(openstack server list -c Name -f value); do 
-  echo rpms to update in OSP repo for $host
-  ssh heat-admin@$host sudo yum check-updates --disablerepo='*' --enablerepo="$osprepo" | wc -l
+if $long; then
+  echo "### mongodb status ###"
+  read mongoip <<< $(ssh heat-admin@$controller0 sudo grep 'mongodb://' /etc/ceilometer/ceilometer.conf| grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n1)
+  ssh heat-admin@$controller0 "sudo mongo $mongoip:27017/ceilometer --eval \"printjson(rs.status())\"" | grep -e name -e state -e optime\" -e lastHeartbeatRecv
   echo ' '
-done
+fi
 
-echo "### restart needed status ###"
-for host in $(openstack server list -c Name -f value); do 
-  echo restart status for $host
-  ssh heat-admin@$host sudo  needs-restarting  -r ; echo $?
-  echo ' '
-done
+if $long; then
+  . ~/stackrc
+  echo "### update status ###"
+  read osprepo <<< $(sudo subscription-manager repos --list-enabled | grep -o  'rhel-7-server-openstack-..-rpms')
+  for host in $(openstack server list -c Name -f value); do 
+    echo rpms to update in OSP repo for $host
+    ssh heat-admin@$host sudo yum check-updates --disablerepo='*' --enablerepo="$osprepo" | wc -l
+    echo ' '
+  done
+fi
+
+if $long; then
+  echo "### restart needed status ###"
+  for host in $(openstack server list -c Name -f value); do 
+    echo restart status for $host
+    ssh heat-admin@$host sudo  needs-restarting  -r ; echo $?
+    echo ' '
+  done
+fi
 
 if [ ! -e etc/tempest.conf ]; then 
   echo "etc/tempest.conf not found; won't try to run tests" 
 else
-  sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
+  if $long; then 
+    sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
+  fi
 fi

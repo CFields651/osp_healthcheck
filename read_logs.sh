@@ -1,1 +1,1 @@
-for service in nova neutron glance cinder ceph ceilometer; do echo -e "\n######## echo $(hostname) $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done | while read line; do echo "$line"; done
+for service in nova neutron glance cinder ceph ceilometer; do echo -e "\n######## $(hostname) $service log check #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done | while read line; do echo "$line"; done
