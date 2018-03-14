@@ -110,6 +110,13 @@ for host in $(openstack server list -c Name -f value); do
   echo ' '
 done
 
+echo "### haproxy status up/down ###"
+read haproxy_creds <<< $(ssh heat-admin@overcloud-controller-0 sudo grep -o "admin:[0-9A-Za-z]*" /etc/haproxy/haproxy.cfg)
+read haproxy_loc   <<< $(ssh heat-admin@overcloud-controller-0 "sudo  grep  'haproxy\.stats' /etc/haproxy/haproxy.cfg -A 1" | tail -1 | awk '{ print $2 }')
+echo haproxy_loc=$haproxy_loc
+curl -s -u "$haproxy_creds" "http://$haproxy_loc/\;csv" | egrep -vi "(frontend|backend)" | awk -F',' '{ print $1" "$2" "$18 }'
+echo ' '
+
 if $long; then 
   echo "### kernel errors since boot ###"
   for host in $(openstack server list -c Name -f value); do 
@@ -130,17 +137,17 @@ echo "### volume service list ###"
 openstack volume service list
 echo " "
 
-#read -p "Press enter to continue..."
-echo "### api response ###"
-. ~/overcloudrc
-for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl -s --max-time 3 $url;done
-echo " " 
+#removing api response because we're checking systemd for api services and haproxy stats for results - that's enough
+#echo "### api response ###"
+#. ~/overcloudrc
+#for url in $(openstack catalog list -c Endpoints -f value | grep publicURL | awk -F'URL:' '{ print $2 }' | grep -o "http://.*:...."); do echo -e "\n\n$url"; curl -s --max-time 3 $url;done
+#echo " " 
 
 echo "### undercloud metadata response ###"
 read metaport <<< $(sudo grep "^metadata_listen_port" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
 read metaip   <<< $(sudo grep "^metadata_listen=" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
 curl -s $metaip:$metaport
-echo " " 
+echo -e "\n" 
 
 echo "### overcloud metadata response ###"
 read metaport   <<< $(ssh heat-admin@$masterctrl sudo grep "^metadata_listen_port" /etc/nova/nova.conf  | awk -F= '{ print $2 }')
@@ -148,8 +155,8 @@ read metaip <<< $(ssh heat-admin@$masterctrl sudo grep "^metadata_listen=" /etc/
 ssh heat-admin@$masterctrl sudo curl -s $metaip:$metaport
 echo " " 
 
+echo " "
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
-#read -p "Press enter to continue..."
 echo " "
 scp $(echo $scriptpath)/read_logs.sh heat-admin@$controller0:/tmp/read_logs.sh >> /dev/null
 ssh heat-admin@$controller0 sudo su -c /tmp/read_logs.sh | while read line; do filterLog "$line"; done
