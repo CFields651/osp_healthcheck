@@ -1,6 +1,6 @@
 #!/bin/bash
 long=$1
-minutes=$1
+minutes=$2
 echo -e "This script assumes that: \n \
   1) It will be run from the undercloud as root\n \
   2) root can ssh to each overcloud controller\n \
@@ -14,7 +14,7 @@ echo -e "This script assumes that: \n \
 echo " "
 
 #check to see if we run all tests
-if [ -z "$long" ]; then long=false; fi
+if [ -z "$long" ]; then long=false; else long=true; fi
 #go back $minutes for ERROR|WARN messages
 if [ -z "$minutes" ]; then minutes=60; fi
 
@@ -42,7 +42,7 @@ function filterLog {
   fi
 }
 
-if $long; then
+if [ $long ]; then
   echo "### disk space check ###"
   echo "disk space on $(hostname)"
   sudo df -h | head -5
@@ -111,13 +111,13 @@ for host in $(openstack server list -c Name -f value); do
 done
 
 echo "### haproxy status up/down ###"
-read haproxy_creds <<< $(ssh heat-admin@overcloud-controller-0 sudo grep -o "admin:[0-9A-Za-z]*" /etc/haproxy/haproxy.cfg)
-read haproxy_loc   <<< $(ssh heat-admin@overcloud-controller-0 "sudo  grep  'haproxy\.stats' /etc/haproxy/haproxy.cfg -A 1" | tail -1 | awk '{ print $2 }')
+read haproxy_creds <<< $(ssh heat-admin@$masterctrl sudo grep -o "admin:[0-9A-Za-z]*" /etc/haproxy/haproxy.cfg)
+read haproxy_loc   <<< $(ssh heat-admin@$masterctrl "sudo  grep  'haproxy\.stats' /etc/haproxy/haproxy.cfg -A 1" | tail -1 | awk '{ print $2 }')
 echo haproxy_loc=$haproxy_loc
 curl -s -u "$haproxy_creds" "http://$haproxy_loc/\;csv" | egrep -vi "(frontend|backend)" | awk -F',' '{ print $1" "$2" "$18 }'
 echo ' '
 
-if $long; then 
+if [ $long ]; then 
   echo "### kernel errors since boot ###"
   for host in $(openstack server list -c Name -f value); do 
     echo "kernel errors on $host"
@@ -155,6 +155,13 @@ read metaip <<< $(ssh heat-admin@$masterctrl sudo grep "^metadata_listen=" /etc/
 ssh heat-admin@$masterctrl sudo curl -s $metaip:$metaport
 echo " " 
 
+if [ $long ]; then
+  echo ' '  
+  echo "### overcloud database pruning cron jobs ###"
+  ssh heat-admin@$masterctrl 'for user in ceilometer heat nova cinder keystone; do echo "-----$user-----"; sudo crontab -u $user -l; done'
+  echo ' '
+fi
+
 echo " "
 echo "Show ERROR|WARN messages in service log for last $minutes minutes"
 echo " "
@@ -171,25 +178,14 @@ ssh heat-admin@$controller2 sudo su -c /tmp/read_logs.sh | while read line; do f
 #ssh heat-admin@$controller2 'for service in nova neutron glance cinder ceph; do echo -e "\n######## controller2 $service #################"; tail -n 500 /var/log/$service/*.log | egrep "(ERROR|WARN)" | tail -3 ; done' | while read line; do filterLog "$line"; done
 echo " "
 
-if $long; then 
-  echo "Show scenario issues in service logs that are type INFO"
-#  read -p "Press enter to continue..."
-  echo -e "\n#########controller 0 Port not present##########"
-  ssh heat-admin@$controller0 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
-  echo -e "\n#########controller 1 Port not present##########"
-  ssh heat-admin@$controller1 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
-  echo -e "\n#########controller 2 Port not present##########"
-  ssh heat-admin@$controller2 sudo 'grep "Port [0-9a-z].* not present in bridge" /var/log/neutron/openvswitch-agent.log' | while read line; do filterLog "$line"; done
-fi
-
-if $long; then
+if [ $long ]; then
   echo "### mongodb status ###"
   read mongoip <<< $(ssh heat-admin@$controller0 sudo grep 'mongodb://' /etc/ceilometer/ceilometer.conf| grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | head -n1)
   ssh heat-admin@$controller0 "sudo mongo $mongoip:27017/ceilometer --eval \"printjson(rs.status())\"" | grep -e name -e state -e optime\" -e lastHeartbeatRecv
   echo ' '
 fi
 
-if $long; then
+if [ $long ]; then
   . ~/stackrc
   echo "### update status ###"
   read osprepo <<< $(sudo subscription-manager repos --list-enabled | grep -o  'rhel-7-server-openstack-..-rpms')
@@ -200,7 +196,7 @@ if $long; then
   done
 fi
 
-if $long; then
+if [ $long ]; then
   echo "### restart needed status ###"
   for host in $(openstack server list -c Name -f value); do 
     echo restart status for $host
@@ -212,7 +208,7 @@ fi
 if [ ! -e etc/tempest.conf ]; then 
   echo "etc/tempest.conf not found; won't try to run tests" 
 else
-  if $long; then 
+  if [ $long ]; then 
     sudo su -c "ostestr --pdb tempest.scenario.test_minimum_basic" 
   fi
 fi
