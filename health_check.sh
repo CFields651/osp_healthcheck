@@ -2,15 +2,25 @@
 long=$1
 minutes=$2
 echo -e "This script assumes that: \n \
-  1) It will be run from the undercloud as root\n \
+  1) It will be run from the undercloud\n \
+  2) /home/stack/overcloudrc has overcloud credentials\n \
   2) root can ssh to each overcloud controller\n \
   3) The Undercloud is not using UTC time and overcloud is. \n \
      If this is not the case see the comments in filterLog function\n \
   4) It will be run from the directory where tempest tests can be executed if tempest testing is desired\n \
-  5) Overcloud node are in /etc/hosts/; if not: \n \
-     openstack server list -c Name -c Networks -f value | awk '{ gsub(\"ctlplane=\",\"\"); print \$2\"  \"\$1; }'  >>/etc/hosts"
+  5) Overcloud node are in /etc/hosts/; if not this script wil update it \n "
      #openstack server list -c Name -c Networks -f value | awk '{ gsub("ctlplane=",""); print $2"  "$1; }'  >>/etc/hosts
-#read -p "Press enter to continue..."
+echo " "
+
+#make sure /etc/hosts is up to date
+echo "Checking /etc/hosts/..."
+export host_update=false
+for node in $(openstack server list -c Name -f value); do grep $node /etc/hosts || export host_update=true; done
+if [ $host_update == 'true' ]; then 
+  echo "Updating /etc/hosts with overcloud nodes"
+  openstack server list -c Name -c Networks -f value | awk '{ gsub("ctlplane=",""); print $2"  "$1; }'  >/tmp/hosts
+  sudo bash -c 'cat /tmp/hosts >>/etc/hosts'
+fi
 echo " "
 
 #check to see if we run all tests
