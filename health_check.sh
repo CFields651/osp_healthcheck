@@ -198,9 +198,9 @@ fi
 if [ $long ]; then
   . ~/stackrc
   echo "### update status ###"
-  read osprepo <<< $(sudo subscription-manager repos --list-enabled | grep -o  'rhel-7-server-openstack-..-rpms')
+  read osprepo <<< $(ssh heat-admin@$masterctrl sudo yum repolist | grep -o  'rhel-7-server-openstack-..-rpms')
   for host in $(openstack server list -c Name -f value); do 
-    echo rpms to update in OSP repo for $host
+    echo rpms to update from $osprepo repo for $host
     ssh heat-admin@$host sudo yum check-updates --disablerepo='*' --enablerepo="$osprepo" | wc -l
     echo ' '
   done
